@@ -1,8 +1,11 @@
+use std::io::BufWriter;
 use std::str;
 use std::{
-    io::{BufReader, Read, Write},
+    io::{BufReader, Write},
     net,
 };
+
+mod resp;
 
 const ADDR: &str = "0.0.0.0:6379";
 
@@ -13,12 +16,16 @@ fn main() {
 
     for stream in listener.incoming() {
         println!("Connection established");
-        let mut stream = stream.unwrap();
-        let mut reader = BufReader::new(&stream);
-        let mut buf = vec![];
-        let count = reader.read(&mut buf).unwrap();
-        let content = str::from_utf8(&buf[0..count]).unwrap();
-        println!("{}", content);
-        stream.write_all("+OK\r\n".as_bytes()).unwrap();
+        let stream = stream.unwrap();
+        let reader = BufReader::new(&stream);
+        let mut writer = BufWriter::new(&stream);
+
+        let mut resp = resp::Resp::new(reader);
+        let data = resp.read().unwrap();
+
+        println!("Raw data: {:?}", resp.raw_data);
+        println!("Parsed data: {:?}", data);
+
+        writer.write_all("+OK\r\n".as_bytes()).unwrap();
     }
 }

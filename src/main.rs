@@ -1,9 +1,8 @@
 use std::io::BufWriter;
 use std::str;
-use std::{
-    io::{BufReader, Write},
-    net,
-};
+use std::{io::BufReader, net};
+
+use resp::RespData;
 
 mod resp;
 
@@ -26,6 +25,8 @@ fn main() {
         println!("Raw data: {:?}", resp.raw_data);
         println!("Parsed data: {:?}", data);
 
-        writer.write_all("+OK\r\n".as_bytes()).unwrap();
+        RespData::SimpleString("OK".to_string())
+            .write(&mut writer)
+            .unwrap();
     }
 }

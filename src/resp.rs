@@ -6,7 +6,7 @@ const SIMPLE_STRING: char = '+';
 const ERROR: char = '-';
 const INTEGER: char = ':';
 const ARRAY: char = '*';
-const LINE_TERMINATORS: &[u8] = b"\r\n";
+const LINE_TERMINATORS: &str = "\r\n";
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RespData {
@@ -23,44 +23,34 @@ impl RespData {
         match self {
             RespData::SimpleString(s) => {
                 buf.write_all(&[SIMPLE_STRING as u8])?;
-                buf.write_all(s.as_bytes())?;
-                buf.write_all(LINE_TERMINATORS)?;
-                Ok(())
+                write!(buf, "{s}{LINE_TERMINATORS}")
             }
             RespData::Error(e) => {
                 buf.write_all(&[ERROR as u8])?;
-                buf.write_all(b"ERR ")?;
-                buf.write_all(e.as_bytes())?;
-                buf.write_all(LINE_TERMINATORS)?;
-                Ok(())
+                write!(buf, "ERR {e}{LINE_TERMINATORS}")
             }
             RespData::Integer(n) => {
                 buf.write_all(&[INTEGER as u8])?;
-                buf.write_all(n.to_string().as_bytes())?;
-                buf.write_all(LINE_TERMINATORS)?;
-                Ok(())
+                write!(buf, "{n}{LINE_TERMINATORS}")
             }
             RespData::BulkString(s) => {
                 buf.write_all(&[BULK_STRING as u8])?;
-                buf.write_all(s.len().to_string().as_bytes())?;
-                buf.write_all(LINE_TERMINATORS)?;
-                buf.write_all(s.as_bytes())?;
-                buf.write_all(LINE_TERMINATORS)?;
-                Ok(())
+                write!(
+                    buf,
+                    "{len}{LINE_TERMINATORS}{s}{LINE_TERMINATORS}",
+                    len = s.len()
+                )
             }
             RespData::Array(arr) => {
                 buf.write_all(&[ARRAY as u8])?;
-                buf.write_all(arr.len().to_string().as_bytes())?;
-                buf.write_all(LINE_TERMINATORS)?;
+                write!(buf, "{len}{LINE_TERMINATORS}", len = arr.len())?;
                 for item in arr {
                     item.write(buf)?;
                 }
                 Ok(())
             }
             RespData::Null => {
-                buf.write_all(b"$-1")?;
-                buf.write_all(LINE_TERMINATORS)?;
-                Ok(())
+                write!(buf, "$-1{LINE_TERMINATORS}")
             }
         }
     }
@@ -131,72 +121,57 @@ impl<R: Read> Resp<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+
+    #[track_caller]
+    fn assert_format_repr(value: &RespData, repr: &[u8]) {
+        let mut buffer = Vec::new();
+        value.write(&mut buffer).unwrap();
+        assert_eq!(buffer, repr);
+    }
 
     #[test]
     fn test_simple_string_write_to_buf() {
-        let simple_string = RespData::SimpleString("OK".to_string());
-        let mut buffer = Cursor::new(Vec::new());
-        simple_string.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"+OK\r\n");
+        assert_format_repr(&RespData::SimpleString("OK".into()), b"+OK\r\n");
     }
 
     #[test]
     fn test_error_write_to_buf() {
-        let error = RespData::Error("Invalid command".to_string());
-        let mut buffer = Cursor::new(Vec::new());
-        error.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"-ERR Invalid command\r\n");
+        assert_format_repr(
+            &RespData::Error("Invalid command".to_string()),
+            b"-ERR Invalid command\r\n",
+        )
     }
 
     #[test]
     fn test_integer_write_to_buf() {
-        let integer = RespData::Integer(123);
-        let mut buffer = Cursor::new(Vec::new());
-        integer.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b":123\r\n");
-
-        let negative = RespData::Integer(-123);
-        let mut buffer = Cursor::new(Vec::new());
-        negative.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b":-123\r\n");
+        assert_format_repr(&RespData::Integer(123), b":123\r\n");
+        assert_format_repr(&RespData::Integer(-123), b":-123\r\n");
     }
 
     #[test]
     fn test_bulk_string_write_to_buf() {
-        let bulk_string = RespData::BulkString("hello".to_string());
-        let mut buffer = Cursor::new(Vec::new());
-        bulk_string.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"$5\r\nhello\r\n");
-
-        let empty_string = RespData::BulkString("".to_string());
-        let mut buffer = Cursor::new(Vec::new());
-        empty_string.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"$0\r\n\r\n");
+        assert_format_repr(
+            &RespData::BulkString("hello".to_string()),
+            b"$5\r\nhello\r\n",
+        );
+        assert_format_repr(&RespData::BulkString("".to_string()), b"$0\r\n\r\n");
     }
 
     #[test]
     fn test_array_write_to_buf() {
-        let array = RespData::Array(vec![
-            RespData::SimpleString("OK".to_string()),
-            RespData::Integer(123),
-            RespData::BulkString("hello".to_string()),
-        ]);
-        let mut buffer = Cursor::new(Vec::new());
-        array.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"*3\r\n+OK\r\n:123\r\n$5\r\nhello\r\n");
-
-        let empty_array = RespData::Array(vec![]);
-        let mut buffer = Cursor::new(Vec::new());
-        empty_array.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"*0\r\n");
+        assert_format_repr(
+            &RespData::Array(vec![
+                RespData::SimpleString("OK".to_string()),
+                RespData::Integer(123),
+                RespData::BulkString("hello".to_string()),
+            ]),
+            b"*3\r\n+OK\r\n:123\r\n$5\r\nhello\r\n",
+        );
+        assert_format_repr(&RespData::Array(vec![]), b"*0\r\n");
     }
 
     #[test]
     fn test_null_write_to_buf() {
-        let null = RespData::Null;
-        let mut buffer = Cursor::new(Vec::new());
-        null.write(&mut buffer).unwrap();
-        assert_eq!(buffer.into_inner(), b"$-1\r\n");
+        assert_format_repr(&RespData::Null, b"$-1\r\n");
     }
 }

@@ -8,7 +8,7 @@ const INTEGER: char = ':';
 const ARRAY: char = '*';
 const LINE_TERMINATORS: &str = "\r\n";
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum RespData {
     SimpleString(String),
     Error(String),
@@ -121,13 +121,7 @@ impl<R: Read> Resp<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[track_caller]
-    fn assert_format_repr(value: &RespData, repr: &[u8]) {
-        let mut buffer = Vec::new();
-        value.write(&mut buffer).unwrap();
-        assert_eq!(buffer, repr);
-    }
+    use crate::util::assert_format_repr;
 
     #[test]
     fn test_simple_string_write_to_buf() {
